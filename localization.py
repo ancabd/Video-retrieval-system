@@ -15,68 +15,61 @@ def get_args():
 # returns coordinates (top left, top right, bottom left, bottom right)
 def localize(frame):
 	img = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-	#contours, hierarchy = cv2.findContours(image=img, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_NONE)
-	#image_copy = frame.copy()
-	#cv2.drawContours(image=image_copy, contours=contours, contourIdx=-1, color=(0, 255, 0), thickness=2, lineType=cv2.LINE_AA)
-	dst = cv2.cornerHarris(img,2,3,0.04)
-	dst = cv2.dilate(dst,None)
+	edges = cv2.Canny(img,100,200)
+	image_copy = frame.copy()
+	contours, hierarchy = cv2.findContours(image=edges, mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
+	contours = sorted(contours, key=cv2.contourArea, reverse=True)
+	cnt = contours[0]
+	
+	x1,y1 = cnt[0][0]
+	approx = cv2.approxPolyDP(cnt, 0.1*cv2.arcLength(cnt, True), True)
+	if len(approx) == 4:
+		x, y, w, h = cv2.boundingRect(cnt)
+		image_copy = cv2.drawContours(image_copy, [cnt], -1, (0,255,0), 3)
+		return (x, y, x+w, y+h)
 
-	#frame[dst>0.01*dst.max()]=[0,0,255]
+def find_video(query):
+	cap = cv2.VideoCapture(query)
+	if (cap.isOpened()== False): 
+		print("Error opening video stream or file")
 
-	#cv2.imshow('contours',image_copy)
-	#cv2.waitKey(0)
-	#return frame
-	return harris_corner_detection(frame, 3, 0.01)
+	rects = []
+	h, w = None, None
+	while(cap.isOpened()):
+		ret, frame = cap.read()
+		if frame is not None:
+			h, w = frame.shape[:2]
+		if ret == True:
+			res = localize(frame)
+			if res is not None:
+				rects.append(res)
+		else: 
+			break
 
-def harris_corner_detection(img, window_size, threshold):
-    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+	cap.release()
+	cv2.destroyAllWindows()
 
-    img_gaussian = cv2.GaussianBlur(gray,(3,3),0)
-        
-    height, width = img.shape[:2]
-    matrix_R = np.zeros((height,width))
-    
-    # Calculate the x and y image derivatives using Sobel operator
-    dx = cv2.Sobel(img_gaussian, cv2.CV_64F, 1, 0, ksize=3)
-    dy = cv2.Sobel(img_gaussian, cv2.CV_64F, 0, 1, ksize=3)
-    # dy, dx = np.gradient(gray)
+	# find the most common rectangle
+	# TODO: unhardcode values
+	block_size = 4
+	counterX = np.zeros((2, int(w/block_size) + 4))
+	counterY = np.zeros((2, int(h/block_size) + 4))
+	for rect in rects:
+		counterX[0][int(rect[0]/block_size)] += 1
+		counterX[1][int(rect[2]/block_size)] += 1
 
-    # Calculate product and second derivatives
-    dx2=np.square(dx)
-    dy2=np.square(dy)
-    dxy=dx*dy
+		counterY[0][int(rect[1]/block_size)] += 1
+		counterY[1][int(rect[3]/block_size)] += 1
 
-    offset = int( window_size / 2 )
-
-    # Calculate second moment matrix for every point
-    for y in range(offset, height-offset):
-        for x in range(offset, width-offset):
-            Sx2 = np.sum(dx2[y-offset:y+1+offset, x-offset:x+1+offset])
-            Sy2 = np.sum(dy2[y-offset:y+1+offset, x-offset:x+1+offset])
-            Sxy = np.sum(dxy[y-offset:y+1+offset, x-offset:x+1+offset])
-
-            #  Calculate second moment matrix for current point (x, y)
-            M = np.array([[Sx2,Sxy],[Sxy,Sy2]])
-
-            #  Approximate the product over the sum of the eigenvalues of the second moment matrix
-            det, tr = np.linalg.det(M), np.matrix.trace(M)
-            if tr == 0:
-                matrix_R[y-offset, x-offset] = 0
-            else:
-                matrix_R[y-offset, x-offset] = det/tr
-    
-    # Apply a threshold
-    cornerList = []
-    cv2.normalize(matrix_R, matrix_R, 0, 1, cv2.NORM_MINMAX)
-    for y in range(offset, height-offset):
-        for x in range(offset, width-offset):
-            value=matrix_R[y, x]
-            if value>threshold:
-                cornerList.append([x, y, value])
-                cv2.circle(img,(x,y),1,(0,255,0))
-    return img
+	x1 = np.argmax(counterX[0], axis=0) * block_size
+	x2 = np.argmax(counterX[1], axis=0) * block_size
+	y1 = np.argmax(counterY[0], axis=0) * block_size
+	y2 = np.argmax(counterY[1], axis=0) * block_size
+	return (x1, y1, x2, y2)
 
 def show_video(query):
+	x1, y1, x2, y2 = find_video(query)
+
 	cap = cv2.VideoCapture(query)
 	if (cap.isOpened()== False): 
 		print("Error opening video stream or file")
@@ -84,7 +77,8 @@ def show_video(query):
 	while(cap.isOpened()):
 		ret, frame = cap.read()
 		if ret == True:
-			cv2.imshow('Frame', localize(frame))
+			cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+			cv2.imshow('Frame', frame)
 
 			# Press Q on keyboard to  exit
 			if cv2.waitKey(25) & 0xFF == ord('q'):
