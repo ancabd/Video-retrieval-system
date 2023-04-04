@@ -11,6 +11,7 @@ import sys
 import os
 from video_features import *
 import pickle
+import localization
  
 features = ['colorhists', 'sift', 'audiopowers', 'mfccs', 'colorhistdiffs']
  
@@ -49,10 +50,18 @@ prev_frame = None
 prev_colorhist = None
 # starting frame number
 frame_nbr = int(args.s)*frame_rate
-# set the starting moment to play the video 
-cap.set(cv2.CAP_PROP_POS_FRAMES, frame_nbr)
-while(cap.isOpened() and cap.get(cv2.CAP_PROP_POS_FRAMES) < (int(args.e)*frame_rate)):
-    ret, frame = cap.read()
+# end frame number
+end_frame = int(args.e)*frame_rate
+
+# localize video
+video = localization.read_video(args.query, frame_nbr, end_frame)
+screen_coord = localization.find_video(video)
+
+if screen_coord is not None:
+    x1, y1, x2, y2 = screen_coord
+    video = [video[i][x1:x2, y1:y2] for i in range(len(video))]
+
+for frame in video:
     if frame is None:
         break
 
