@@ -11,8 +11,9 @@ import sys
 import os
 from video_features import *
 import pickle
- 
-features = ['colorhists', 'sift', 'audiopowers', 'mfccs', 'colorhistdiffs']
+bol = False
+
+features = ['colorhists', 'sift', 'all', 'mfccs', 'colorhistdiffs']
  
 parser = argparse.ArgumentParser(description="Video Query tool")
 #parser.add_argument("training_set", help="Path to training videos and wav files")
@@ -20,6 +21,7 @@ parser.add_argument("query", help="query video")
 parser.add_argument("-s", help="Timestamp for start of query in seconds", default=0.0)
 parser.add_argument("-e", help="Timestamp for end of query in seconds", default=0.0)
 parser.add_argument("-f", help="Select features "+str(features)+" for the query ", default='colorhists')
+parser.add_argument("-p", help="Select percantage of colorhist", default=50, type= int)
 args = parser.parse_args()
 
 if not args.f in features:
@@ -37,14 +39,9 @@ if not float(args.s) < float(args.e) < q_total:
     print('Timestamp for end of query set to:', q_duration)
     args.e = q_total
 
-# Load audio data if necessary
-if args.f == features[2] or args.f == features[3]:
-    filename, fileExtension = os.path.splitext(args.query)
-    audio = filename + '.wav'
-    fs, wav_data = wavfile.read(audio)
-
 # store the indicated features for every video frame
 query_features = []
+query_features1 = []
 prev_frame = None
 prev_colorhist = None
 # starting frame number
@@ -58,26 +55,26 @@ while(cap.isOpened() and cap.get(cv2.CAP_PROP_POS_FRAMES) < (int(args.e)*frame_r
 
     if args.f == features[0]: 
         h = ft.colorhist(frame)
+        if h is not None:
+            query_features.append(h)
     elif args.f == features[1]:
         h = ft.sift(frame)
-    elif args.f == features[2] or args.f == features[3]:
-        audio_frame = frame_to_audio(frame_nbr, frame_rate, fs, wav_data)
-        if args.f == features[2]:
-            h = np.mean(audio_frame**2)
-        elif args.f == features[3]:
-            h, mspec, spec = ft.extract_mfcc(audio_frame, fs)
-    elif args.f == features[4]:
-        colorhist = ft.colorhist(frame)
-        h = colorhist_diff(prev_colorhist, colorhist)
-        prev_colorhist = colorhist
-    if h is not None:
-        query_features.append(h)
+        if h is not None:
+            query_features.append(h)
+    elif args.f == features[2]:
+        h_colorhist = ft.colorhist(frame)
+        h_sift = ft.sift(frame)
+        if h_colorhist is not None and h_sift is not None:
+            query_features.append(h_colorhist)
+            query_features1.append(h_sift)
+
+    
     prev_frame = frame
     frame_nbr += 1
 
 # Compare with database
 
-video_types = ('*.mp4', '*.MP4', '*.avi')
+video_types = ('*.mp4', '*.avi')
 audio_types = ('*.wav', '*.WAV')
 
 # grab all video file names
@@ -105,14 +102,26 @@ def sliding_window(x, w, compare_func):
             minimum = diff
             frame   = i
     return frame, minimum
+
+def sliding_window_max(x, y, len_w, compare_func):
+    """ Slide window w over signal x. 
+
+        compare_func should be a functions that calculates some score between w and a chunk of x
+    """
+    maximum = -sys.maxsize -1
+    for i in range(len(x) - len_w):
+        for j in range(len(y) - len_w):
+            diff = compare_func(x[i:(i+len_w)], y[j:(j+len_w)])
+            if diff > maximum:
+                maximum = diff
+    return maximum
    
 def euclidean_norm_mean(x,y):
     x = np.mean(x, axis=0)
-    y = np.mean(y, axis=0)
+    y = np.mean(y, axis=0)   
     return np.linalg.norm(x-y)
 
 def euclidean_norm(x,y):
-
     return np.linalg.norm(np.array(x)-np.array(y))
 
 def prep_sift(x,w,func):
@@ -122,8 +131,35 @@ def prep_sift(x,w,func):
         sift_vocabulary = pickle.load(f, encoding="bytes")
     words = []
     for frame in w:
-        words.append(np.array(sift_vocabulary.project(frame)))
+        words.append(np.array(sift_vocabulary.project(frame))) 
     return sliding_window(x,words, func)
+
+def normalize_colorhist(score):
+    return 1- (score/max_distance_colorhist)
+def normalize_sift(score):
+    return 1- (score/max_distance_sift)
+
+
+top_3 =           { "[video1, sys.maxsize]" : -sys.maxsize-1,
+                    "[video2, sys.maxsize]" : -sys.maxsize-1,
+                    "[video3, sys.maxsize]" : -sys.maxsize-1
+                    }
+
+norm_colorhist = []
+len_w = 0
+def max_colorhist_dif_estimation():
+    b_vid = np.zeros([480,640,3])
+    w_vid = np.zeros([480,640,3])
+    w_vid.fill(255)
+    b_hist = ft.colorhist(b_vid)
+    w_hist = ft.colorhist(w_vid)
+    dif = euclidean_norm(b_hist, w_hist)/2
+    max_distance_colorhist = dif * frame_count /frame_rate
+    return max_distance_colorhist
+
+
+max_distance_colorhist = max_colorhist_dif_estimation()
+max_distance_sift = 7* frame_count/frame_rate
 
 # Loop over all videos in the database and compare frame by frame
 for video in video_list:
@@ -133,14 +169,42 @@ for video in video_list:
         print('Error: query is longer than database video')
         continue
 
-    w = np.array(query_features)
+    if args.f ==features[0] or args.f == features[1]:
+        w = np.array(query_features)
+
+    if args.f == features[2]:
+        w = np.array(query_features)
+        y = np.array(query_features1)
+    
     if args.f == features[0]: 
         x = search.get_colorhists_for(video)
         frame, score = sliding_window(x,w, euclidean_norm_mean)
+    
     elif args.f == features[1]:
         x = search.get_sift_for(video)
         frame, score = prep_sift(x,w, euclidean_norm)
-#    elif args.f == features[2]:
+    
+    elif args.f == features[2]:
+        len_w = len(w)
+        x = search.get_colorhists_for(video)
+        norm_colorhist.append(x)
+        frame_colorhist, score_colorhist = sliding_window(x,w, euclidean_norm_mean)
+        score_colorhist = normalize_colorhist(score_colorhist)   
+        print(score_colorhist, "video   ")
+           
+        x_sift = search.get_sift_for(video)
+        frame_sift, score_sift= prep_sift(x_sift,y, euclidean_norm)
+        score_sift = normalize_sift(score_sift)
+
+        score = (score_colorhist * args.p + (score_sift * (100-args.p))) /100
+    
+        min_hist = min(top_3, key=top_3.get)
+        if score > top_3.get(min_hist):
+            top_3.pop(min_hist)
+            top_3[str(video) + "," + str(frame_colorhist/frame_rate)] = score
+            
+
+        
 #        x = search.get_audiopowers_for(video)
 #        frame, score = sliding_window(x,w, euclidean_norm)
 #    elif args.f == features[3]:
@@ -151,9 +215,9 @@ for video in video_list:
     elif args.f == features[4]:
         x = search.get_chdiffs_for(video)
         frame, score = sliding_window(x,w, euclidean_norm)
-        
-    print('Best match at:', frame/frame_rate, 'seconds, with score of:', score)
-    print('')
 
 
+sorted_scores= sorted(top_3.items(), key=lambda x:x[1] ,reverse=True)
+dict_top_3 =dict(sorted_scores)
+print(dict_top_3)
     
