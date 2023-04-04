@@ -50,7 +50,7 @@ class Indexer(object):
         self.con.execute("insert into audiopowers(vidid,features) values (?,?)", (vidid,pickle.dumps(audio)))
                 
 
-    def add_to_index(self, vidname, descr):
+    def add_to_index(self, vidname, descr, voc):
         """ Take an video with feature descriptors, 
             add to database. """
 
@@ -63,14 +63,16 @@ class Indexer(object):
         #mfccs = descr['mfcc'] # Nx13 np array (or however many mfcc coefficients there are)
         #audio = descr['audio'] # Nx1 np array
         colhist = descr['colhist'] # Nx3x256 np array
-        sift = descr['sift']
         #tempdif = descr['tempdiff'] # Nx1 np array
         #chdiff = descr['chdiff'] # Nx3x256 np array
+        imwords = []
+        for frame in descr['sift']:
+            imwords.append(np.array(voc.project(frame)))
 
         # store descriptor per video
         # use pickle to encode NumPy arrays as strings
         self.con.execute("insert into colorhists(vidid,features) values (?,?)", (vidid,pickle.dumps(colhist)))
-        self.con.execute("insert into sift(vidid,features) values (?,?)", (vidid,pickle.dumps(sift)))
+        self.con.execute("insert into sift(vidid,features) values (?,?)", (vidid,pickle.dumps(imwords)))
         #self.con.execute("insert into tempdiffs(vidid,features) values (?,?)", (vidid,pickle.dumps(tempdif)))
         #self.con.execute("insert into mfccs(vidid,features) values (?,?)", (vidid,pickle.dumps(mfccs)))
         #self.con.execute("insert into audiopowers(vidid,features) values (?,?)", (vidid,pickle.dumps(audio)))

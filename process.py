@@ -13,6 +13,8 @@ from scipy.io.wavfile import read
 from video_tools import *
 from video_features import *
 import db_index_video
+import Vocabulary
+
 
 
 
@@ -57,11 +59,12 @@ def create_database():
 #
 # Processing of videos
 def process_videos(video_list, indx):
+    base = "base"
     total = len(video_list)
-    progress_count = 0
+    sifts = []
+    sift_all = []
+    colorhists = []
     for video in video_list:
-        progress_count += 1
-        print('processing: ',video, ' (' ,progress_count, ' of ' ,total,')')
         cap = cv2.VideoCapture(video)
         #frame_rate = get_frame_rate(video) 
         #total_frames = get_frame_count(video)
@@ -70,33 +73,45 @@ def process_videos(video_list, indx):
         # get corresponding audio file
         #filename, fileExtension = os.path.splitext(video)
 
-        colorhists = []
-        sifts = []
+        colorhist = []
+        sift_descriptors = []
         frame_nbr = 0
         while(cap.isOpened()):
             ret, frame = cap.read()
             if not ret:
                 break
-            sift = ft.sift(frame)
-            sifts.append(sift)
-            colorhist = ft.colorhist(frame)
-            colorhists.append(colorhist)
+            colorhist_frame = ft.colorhist(frame)
+            colorhist.append(colorhist_frame)
+            desc = ft.sift(frame)
+            if desc is not None:
+                sift_descriptors.append(desc)
             #prev_frame = frame
             frame_nbr += 1
-        print('end:', frame_nbr)
+        sifts.append(sift_descriptors)
+        colorhists.append(colorhist)
         
         # prepare descriptor for database
         # mfccs = descr['mfcc'] # Nx13 np array (or however many mfcc coefficients there are)
         # audio = descr['audio'] # Nx1 np array
         # colhist = descr['colhist'] # Nx3x256 np array
         # tempdif = descr['tempdiff'] # Nx1 np array
+        print("processed the video", video)
+    sift_all = np.array(sifts).flatten()
+    sift_vocabulary = Vocabulary.Vocabulary(base)
+    sift_vocabulary.train(sifts, 100)
+    fname = "db/" + base + '_sift_vocabulary.pkl'
+    with open(fname, 'wb') as f: 
+        pickle.dump(sift_vocabulary,f)
+
+    for i, video in enumerate(video_list):
+        print(i)
         descr = {}
-        descr['colhist'] = np.array(colorhists)
-        descr['sift'] = np.array(sifts)
-        indx.add_to_index(video,descr)
-        print('added ' + video + ' to database')
+        descr['colhist'] = np.array(colorhists[i])
+        descr['sift'] = np.array(sifts[i])
+        indx.add_to_index(video,descr, sift_vocabulary)
     indx.db_commit()
-    
+
+
     
 parser = argparse.ArgumentParser(description="Video Processing tool extracts features for each frame of video and for its corresponding audio track")
 parser.add_argument("training_set", help="Path to training videos and wav files")
@@ -104,7 +119,7 @@ parser.add_argument("training_set", help="Path to training videos and wav files"
 args = parser.parse_args()
 
 
-video_types = ('*.mp4', '*.MP4', '*.avi')
+video_types = ('*.mp4', '*.avi')
 audio_types = ('*.wav', '*.WAV')
 
 
@@ -112,6 +127,7 @@ audio_types = ('*.wav', '*.WAV')
 video_list = []
 for type_ in video_types:
     files = args.training_set + '/' +  type_
+    print(files)
     video_list.extend(glob.glob(files))	
 
 # create database
