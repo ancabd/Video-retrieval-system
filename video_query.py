@@ -57,6 +57,7 @@ screen_coord = localization.find_video(video)
 if screen_coord is not None:
     x1, y1, x2, y2 = screen_coord
     video = [video[i][x1:x2, y1:y2] for i in range(len(video))]
+    print("Found video in screen coordinates: ", screen_coord)
 
 for frame in video:
     if frame is None:
