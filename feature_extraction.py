@@ -48,9 +48,12 @@ def colorhist(im):
     return color_hist
 
 def sift(im):
-    sift = cv2.SIFT_create(20)
+    sift_obj = cv2.SIFT_create(20)
+    
     image = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-    kp, desc = sift.detectAndCompute(image, None)
+    kp, desc = sift_obj.detectAndCompute(image, None)
+    if desc is not None:
+        desc = desc[:20]
     return desc
 
 # def get_colorhist(im_list):

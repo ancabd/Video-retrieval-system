@@ -11,7 +11,6 @@ import sys
 import os
 from video_features import *
 import pickle
-bol = False
 
 features = ['colorhists', 'sift', 'all', 'mfccs', 'colorhistdiffs']
  
@@ -90,7 +89,6 @@ search = video_search.Searcher(db_name)
 
 def sliding_window(x, w, compare_func):
     """ Slide window w over signal x. 
-
         compare_func should be a functions that calculates some score between w and a chunk of x
     """
     frame = -1 # init frame 
@@ -105,7 +103,6 @@ def sliding_window(x, w, compare_func):
 
 def sliding_window_max(x, y, len_w, compare_func):
     """ Slide window w over signal x. 
-
         compare_func should be a functions that calculates some score between w and a chunk of x
     """
     maximum = -sys.maxsize -1
@@ -132,6 +129,11 @@ def prep_sift(x,w,func):
     words = []
     for frame in w:
         words.append(np.array(sift_vocabulary.project(frame))) 
+    #print(x)
+    #x = [i / 20 for i in x]
+    #print(len(x))
+    #words = [i / 20 for i in words]
+    
     return sliding_window(x,words, func)
 
 def normalize_colorhist(score):
@@ -190,13 +192,15 @@ for video in video_list:
         norm_colorhist.append(x)
         frame_colorhist, score_colorhist = sliding_window(x,w, euclidean_norm_mean)
         score_colorhist = normalize_colorhist(score_colorhist)   
-        print(score_colorhist, "video   ")
+        print(score_colorhist, video)
            
         x_sift = search.get_sift_for(video)
         frame_sift, score_sift= prep_sift(x_sift,y, euclidean_norm)
+        
         score_sift = normalize_sift(score_sift)
+        print(score_sift)
 
-        score = (score_colorhist * args.p + (score_sift * (100-args.p))) /100
+        score = (score_colorhist ** (args.p /100) * (score_sift ** ((100-args.p)/100)))
     
         min_hist = min(top_3, key=top_3.get)
         if score > top_3.get(min_hist):
@@ -220,4 +224,3 @@ for video in video_list:
 sorted_scores= sorted(top_3.items(), key=lambda x:x[1] ,reverse=True)
 dict_top_3 =dict(sorted_scores)
 print(dict_top_3)
-    
