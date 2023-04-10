@@ -13,7 +13,7 @@ class Vocabulary(object):
         self.trainingdata = []
         self.nbr_words = 0
 
-    def train(self, features, k=100, subsampling=10):
+    def train(self, features, k=20, subsampling=10):
         """ Train a vocabulary from a dictionary of features 
                 using k-means with k number of words. Subsampling 
                 of training data can be used for speedup. """

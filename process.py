@@ -98,7 +98,7 @@ def process_videos(video_list, indx):
         print("processed the video", video)
     sift_all = np.array(sifts).flatten()
     sift_vocabulary = Vocabulary.Vocabulary(base)
-    sift_vocabulary.train(sifts, 100)
+    sift_vocabulary.train(sifts, 20)
     fname = "db/" + base + '_sift_vocabulary.pkl'
     with open(fname, 'wb') as f: 
         pickle.dump(sift_vocabulary,f)
@@ -129,7 +129,7 @@ for type_ in video_types:
     files = args.training_set + '/' +  type_
     print(files)
     video_list.extend(glob.glob(files))	
-
+print(video_list)
 # create database
 indx = create_database()
 process_videos(video_list,indx)
